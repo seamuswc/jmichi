@@ -1,9 +1,9 @@
 module.exports = {
   apps: [{
-    name: 'soipattaya',
+    name: 'jmichi',
     script: 'server/dist/index.js',
-    cwd: '/var/www/soipattaya',
-    env_file: '/var/www/soipattaya/.env',
+    cwd: '/var/www/jmichi',
+    env_file: '/var/www/jmichi/.env',
     instances: 1,
     exec_mode: 'fork'
   }]
