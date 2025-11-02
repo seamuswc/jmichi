@@ -1,12 +1,12 @@
 // Domain-specific configuration
 export const getDomainConfig = () => {
-  // Japan-focused site - default to Tokyo center
+  // Japan-focused site - default to show Shinjuku and Ginza
   return {
     center: {
-      lat: 35.6762, // Tokyo center
-      lng: 139.6503
+      lat: 35.68, // Between Shinjuku (35.69) and Ginza (35.67)
+      lng: 139.735 // Between Shinjuku (139.70) and Ginza (139.77)
     },
-    placeholder: "e.g., 35.6762, 139.6503",
+    placeholder: "e.g., 35.68, 139.735",
     cityName: "Japan",
     siteName: "Jmichi"
   };
