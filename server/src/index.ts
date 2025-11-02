@@ -1092,19 +1092,122 @@ app.post('/api/translate', async (request, reply) => {
   }
 });
 
+// Helper function to determine Japanese city/neighborhood from coordinates
+function getJapaneseCity(lat: number, lng: number): string {
+  // Tokyo neighborhoods (major areas with tighter bounds)
+  // Shinjuku
+  if (lat >= 35.68 && lat <= 35.71 && lng >= 139.69 && lng <= 139.72) {
+    return 'Shinjuku';
+  }
+  // Shibuya
+  if (lat >= 35.65 && lat <= 35.67 && lng >= 139.69 && lng <= 139.72) {
+    return 'Shibuya';
+  }
+  // Ginza
+  if (lat >= 35.66 && lat <= 35.68 && lng >= 139.76 && lng <= 139.78) {
+    return 'Ginza';
+  }
+  // Roppongi
+  if (lat >= 35.66 && lat <= 35.67 && lng >= 139.73 && lng <= 139.74) {
+    return 'Roppongi';
+  }
+  // Akihabara
+  if (lat >= 35.69 && lat <= 35.71 && lng >= 139.77 && lng <= 139.78) {
+    return 'Akihabara';
+  }
+  // Harajuku
+  if (lat >= 35.66 && lat <= 35.68 && lng >= 139.70 && lng <= 139.71) {
+    return 'Harajuku';
+  }
+  // Omotesando
+  if (lat >= 35.66 && lat <= 35.67 && lng >= 139.71 && lng <= 139.73) {
+    return 'Omotesando';
+  }
+  // Azabu
+  if (lat >= 35.65 && lat <= 35.66 && lng >= 139.72 && lng <= 139.74) {
+    return 'Azabu';
+  }
+  // Aoyama
+  if (lat >= 35.66 && lat <= 35.68 && lng >= 139.71 && lng <= 139.73) {
+    return 'Aoyama';
+  }
+  // Tokyo (general Tokyo area but not in specific neighborhoods above)
+  if (lat >= 35.5 && lat <= 36.0 && lng >= 139.5 && lng <= 139.9) {
+    return 'Tokyo';
+  }
+  
+  // Osaka
+  if (lat >= 34.6 && lat <= 34.8 && lng >= 135.4 && lng <= 135.6) {
+    return 'Osaka';
+  }
+  
+  // Kyoto
+  if (lat >= 34.95 && lat <= 35.1 && lng >= 135.7 && lng <= 135.8) {
+    return 'Kyoto';
+  }
+  
+  // Yokohama
+  if (lat >= 35.4 && lat <= 35.5 && lng >= 139.6 && lng <= 139.7) {
+    return 'Yokohama';
+  }
+  
+  // Fukuoka (entire city)
+  if (lat >= 33.5 && lat <= 33.7 && lng >= 130.3 && lng <= 130.5) {
+    return 'Fukuoka';
+  }
+  
+  // Hokkaido (entire prefecture - very large area)
+  if (lat >= 41.0 && lat <= 45.5 && lng >= 139.0 && lng <= 145.5) {
+    return 'Hokkaido';
+  }
+  
+  // Nagoya
+  if (lat >= 35.1 && lat <= 35.3 && lng >= 136.8 && lng <= 137.0) {
+    return 'Nagoya';
+  }
+  
+  // Sendai
+  if (lat >= 38.2 && lat <= 38.3 && lng >= 140.8 && lng <= 140.9) {
+    return 'Sendai';
+  }
+  
+  // Hiroshima
+  if (lat >= 34.3 && lat <= 34.4 && lng >= 132.4 && lng <= 132.5) {
+    return 'Hiroshima';
+  }
+  
+  // Sapporo (Hokkaido's main city, but using more specific bounds)
+  if (lat >= 43.0 && lat <= 43.2 && lng >= 141.3 && lng <= 141.4) {
+    return 'Sapporo';
+  }
+  
+  // Other Japan areas (catch-all for Japan but not specific cities)
+  if (lat >= 24.0 && lat <= 46.0 && lng >= 122.0 && lng <= 146.0) {
+    return 'Other Japan';
+  }
+  
+  // Default for coordinates outside Japan
+  return 'Unknown';
+}
+
 app.get('/api/analytics/data', { preHandler: authenticateUser }, async (request, reply) => {
   try {
     const { area = 'all', period = '6months', city = 'japan' } = request.query as { area?: string; period?: string; city?: string };
     
     // Get listings filtered by Japan coordinates
+    let whereClause: any = {
+      // Filter by Japan coordinates (latitude 24.0-46.0, longitude 122.0-146.0)
+      latitude: { gte: 24.0, lte: 46.0 },
+      longitude: { gte: 122.0, lte: 146.0 }
+    };
+    
+    // Add city filtering if specific area selected
+    if (area !== 'all') {
+      // We'll filter by coordinates after fetching, since city is determined from coordinates
+    }
+    
     const listings = await prisma.listing.findMany({
-      where: {
-        // Filter by Japan coordinates (latitude 24.0-46.0, longitude 122.0-146.0)
-        latitude: { gte: 24.0, lte: 46.0 },
-        longitude: { gte: 122.0, lte: 146.0 },
-        // Add area filtering if needed
-        ...(area !== 'all' && { /* area filter logic */ })
-      },
+      where: whereClause,
       orderBy: { created_at: 'desc' }
     });
 
@@ -1157,57 +1260,113 @@ app.get('/api/analytics/data', { preHandler: authenticateUser }, async (request,
     const rentChange = previousAvgRent > 0 ? ((currentAvgRent - previousAvgRent) / previousAvgRent) * 100 : 0;
     const sqmChange = 0; // Could calculate SQM trends if needed
     
-    // Real area analysis based on geographical areas (North, East, West, South)
+    // Group listings by Japanese cities/neighborhoods
     let areaData = [];
     
     if (totalListings > 0) {
-      // Define Japan center coordinates for area calculation (Tokyo center)
-      const cityCenter = { lat: 35.6762, lng: 139.6503 }; // Tokyo center
+      // Group listings by city/neighborhood
+      const cityGroups: Record<string, { listings: any[], totalCost: number, totalSqm: number, avgLat: number, avgLng: number, count: number }> = {};
       
-      // Group listings by geographical areas (North, East, West, South)
-      const areas = {
-        north: { name: 'North', listings: [] as any[], totalCost: 0, lat: cityCenter.lat + 0.1, lng: cityCenter.lng },
-        east: { name: 'East', listings: [] as any[], totalCost: 0, lat: cityCenter.lat, lng: cityCenter.lng + 0.1 },
-        west: { name: 'West', listings: [] as any[], totalCost: 0, lat: cityCenter.lat, lng: cityCenter.lng - 0.1 },
-        south: { name: 'South', listings: [] as any[], totalCost: 0, lat: cityCenter.lat - 0.1, lng: cityCenter.lng }
-      };
-      
-      // Categorize each listing into geographical areas
       listings.forEach(listing => {
-        const lat = listing.latitude;
-        const lng = listing.longitude;
+        const cityName = getJapaneseCity(listing.latitude, listing.longitude);
         
-        // Determine which area the listing belongs to
-        if (lat > cityCenter.lat && lng > cityCenter.lng) {
-          areas.north.listings.push(listing);
-          areas.north.totalCost += listing.cost;
-        } else if (lat > cityCenter.lat && lng <= cityCenter.lng) {
-          areas.west.listings.push(listing);
-          areas.west.totalCost += listing.cost;
-        } else if (lat <= cityCenter.lat && lng > cityCenter.lng) {
-          areas.east.listings.push(listing);
-          areas.east.totalCost += listing.cost;
-        } else {
-          areas.south.listings.push(listing);
-          areas.south.totalCost += listing.cost;
+        if (!cityGroups[cityName]) {
+          cityGroups[cityName] = {
+            listings: [],
+            totalCost: 0,
+            totalSqm: 0,
+            avgLat: 0,
+            avgLng: 0,
+            count: 0
+          };
         }
+        
+        cityGroups[cityName].listings.push(listing);
+        cityGroups[cityName].totalCost += listing.cost;
+        cityGroups[cityName].totalSqm += listing.sqm;
+        cityGroups[cityName].count++;
+        // Accumulate coordinates for averaging
+        cityGroups[cityName].avgLat += listing.latitude;
+        cityGroups[cityName].avgLng += listing.longitude;
       });
-
+      
+      // Filter by selected area if not 'all'
+      let filteredCityGroups = cityGroups;
+      if (area !== 'all') {
+        if (cityGroups[area]) {
+          filteredCityGroups = { [area]: cityGroups[area] };
+        } else {
+          filteredCityGroups = {};
+        }
+      }
+      
+      // Calculate previous period averages for change calculation
+      const previousPeriodCityGroups: Record<string, number> = {};
+      previousPeriodListings.forEach(listing => {
+        const cityName = getJapaneseCity(listing.latitude, listing.longitude);
+        if (!previousPeriodCityGroups[cityName]) {
+          previousPeriodCityGroups[cityName] = 0;
+        }
+        previousPeriodCityGroups[cityName] += listing.cost;
+      });
+      
       // Convert to areaData format
-      areaData = Object.values(areas).map((area: any) => ({
-        name: area.name,
-        listings: area.listings.length,
-        avgPrice: area.listings.length > 0 ? Math.round(area.totalCost / area.listings.length) : 0,
-        change: 0, // Could calculate real change if needed
-        lat: area.lat,
-        lng: area.lng
-      })).filter(area => area.listings > 0); // Only show areas with listings
+      areaData = Object.entries(filteredCityGroups).map(([cityName, cityData]: [string, any]) => {
+        const avgPrice = cityData.count > 0 ? Math.round(cityData.totalCost / cityData.count) : 0;
+        const prevAvgPrice = previousPeriodCityGroups[cityName] 
+          ? Math.round(previousPeriodCityGroups[cityName] / (previousPeriodListings.filter(l => 
+              getJapaneseCity(l.latitude, l.longitude) === cityName).length || 1))
+          : avgPrice;
+        const change = prevAvgPrice > 0 ? ((avgPrice - prevAvgPrice) / prevAvgPrice) * 100 : 0;
+        
+        return {
+          name: cityName,
+          listings: cityData.count,
+          avgPrice: avgPrice,
+          change: Math.round(change * 10) / 10,
+          lat: cityData.count > 0 ? cityData.avgLat / cityData.count : 35.6762,
+          lng: cityData.count > 0 ? cityData.avgLng / cityData.count : 139.6503
+        };
+      }).filter(area => area.listings > 0).sort((a, b) => b.listings - a.listings); // Sort by listing count
     } else {
-      // No listings, show empty areas
+      // No listings
       areaData = [
         { name: 'No Listings', listings: 0, avgPrice: 0, change: 0, lat: 35.6762, lng: 139.6503 }
       ];
     }
+    
+    // Filter listings if specific area selected
+    let filteredListings = listings;
+    if (area !== 'all') {
+      filteredListings = listings.filter(l => getJapaneseCity(l.latitude, l.longitude) === area);
+      
+      // Recalculate metrics for filtered area
+      if (filteredListings.length > 0) {
+        const filteredAvgRent = filteredListings.reduce((sum, l) => sum + l.cost, 0) / filteredListings.length;
+        const filteredAvgSqm = filteredListings.reduce((sum, l) => sum + l.sqm, 0) / filteredListings.length;
+        const filteredPricePerSqm = filteredAvgSqm > 0 ? filteredAvgRent / filteredAvgSqm : 0;
+        
+        const filteredCurrentPeriod = filteredListings.filter(l => new Date(l.created_at) >= periodStart);
+        const filteredPreviousPeriod = filteredListings.filter(l => new Date(l.created_at) >= previousPeriodStart && new Date(l.created_at) < periodStart);
+        
+        const filteredCurrentAvg = filteredCurrentPeriod.length > 0 
+          ? filteredCurrentPeriod.reduce((sum, l) => sum + l.cost, 0) / filteredCurrentPeriod.length 
+          : 0;
+        const filteredPreviousAvg = filteredPreviousPeriod.length > 0 
+          ? filteredPreviousPeriod.reduce((sum, l) => sum + l.cost, 0) / filteredPreviousPeriod.length 
+          : 0;
+        
+        averageRent = Math.round(filteredAvgRent);
+        pricePerSqm = Math.round(filteredPricePerSqm);
+        totalListings = filteredListings.length;
+        rentChange = filteredPreviousAvg > 0 ? ((filteredCurrentAvg - filteredPreviousAvg) / filteredPreviousAvg) * 100 : 0;
+      }
+    }
+
+    // Get list of all available cities for dropdown
+    const availableCities = totalListings > 0 
+      ? Array.from(new Set(listings.map(l => getJapaneseCity(l.latitude, l.longitude)))).sort()
+      : [];
 
     // Top performing areas
     const topAreas = areaData
@@ -1345,6 +1504,7 @@ app.get('/api/analytics/data', { preHandler: authenticateUser }, async (request,
       topAreas,
       priceRanges,
       predictions,
+      availableCities, // List of cities for dropdown
       // Add historical chart data
       chartData: {
         labels: historicalData.labels,

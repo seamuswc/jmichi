@@ -8,6 +8,7 @@ function DataPage() {
   const [selectedArea, setSelectedArea] = useState('all');
   const [selectedPeriod, setSelectedPeriod] = useState('6months');
   const [chartType, setChartType] = useState('price');
+  const [availableCities, setAvailableCities] = useState<string[]>([]);
   
   const domainConfig = getDomainConfig();
 
@@ -37,6 +38,10 @@ function DataPage() {
         }
       });
       setData(response.data);
+      // Set available cities from response
+      if (response.data.availableCities) {
+        setAvailableCities(response.data.availableCities);
+      }
     } catch (error) {
       console.error('Failed to fetch analytics data:', error);
       if (error.response?.status === 401 || error.response?.status === 403) {
@@ -86,11 +91,9 @@ function DataPage() {
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="all">All Areas</option>
-                <option value="central">Central</option>
-                <option value="north">North</option>
-                <option value="south">South</option>
-                <option value="east">East</option>
-                <option value="west">West</option>
+                {availableCities.map((city) => (
+                  <option key={city} value={city}>{city}</option>
+                ))}
               </select>
               <select
                 value={selectedPeriod}
