@@ -390,13 +390,13 @@ function AuthPage() {
           </div>
         </div>
 
-        {/* Back to Dashboard */}
+        {/* Back to Map */}
         <div className="text-center mt-6">
           <a 
-            href="/dashboard" 
+            href="/" 
             className="text-blue-600 hover:text-blue-800 text-sm"
           >
-            ← Back to Dashboard
+            ← Back to Map
           </a>
         </div>
       </div>
