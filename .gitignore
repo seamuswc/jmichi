@@ -1,12 +1,15 @@
 # Environment variables
+# Ignore all .env files
 .env
-.env.example
 .env.local
 .env.*.local
 *.env
 client/.env
 server/.env
 .env*
+
+# But allow .env.example to be committed (template file)
+!.env.example
 
 # Dependencies
 node_modules/
