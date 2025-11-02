@@ -79,7 +79,16 @@ cd "$APP_DIR"
 
 echo "🔐 Ensuring environment file..."
 if [ ! -f .env ]; then
-  cat > .env <<ENVEOF
+  if [ -f .env.example ]; then
+    echo "Creating .env from .env.example..."
+    cp .env.example .env
+    # Update domain-specific variable
+    sed -i "s|VITE_API_URL=.*|VITE_API_URL=\"https://$PRIMARY_DOMAIN/api\"|g" .env
+    echo "✅ Environment file created from .env.example"
+    echo "⚠️  IMPORTANT: Edit .env and configure ADMIN_PASSWORD, ADMIN_TOKEN, SOLANA_MERCHANT_ADDRESS, TENCENT_SECRET_ID, and TENCENT_SECRET_KEY before continuing!"
+  else
+    echo "⚠️  .env.example not found, creating default .env..."
+    cat > .env <<ENVEOF
 # Database
 DATABASE_URL="file:./server/database/database.sqlite"
 
@@ -111,8 +120,9 @@ VITE_GOOGLE_MAPS_API_KEY="AIzaSyBVdAS-3mrNYARIDmqn2dP1tG1Khqv5GoM"
 VITE_API_URL="https://$PRIMARY_DOMAIN/api"
 VITE_APP_NAME="Jmichi"
 ENVEOF
-  echo "✅ Default environment file created"
-  echo "⚠️  IMPORTANT: Edit .env and configure ADMIN_PASSWORD, ADMIN_TOKEN, SOLANA_MERCHANT_ADDRESS, TENCENT_SECRET_ID, and TENCENT_SECRET_KEY before continuing!"
+    echo "✅ Default environment file created"
+    echo "⚠️  IMPORTANT: Edit .env and configure ADMIN_PASSWORD, ADMIN_TOKEN, SOLANA_MERCHANT_ADDRESS, TENCENT_SECRET_ID, and TENCENT_SECRET_KEY before continuing!"
+  fi
 fi
 
 cp .env server/.env 2>/dev/null || true
