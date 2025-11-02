@@ -1212,10 +1212,10 @@ app.get('/api/analytics/data', { preHandler: authenticateUser }, async (request,
     });
 
     // Calculate analytics from real data
-    const totalListings = listings.length;
-    const averageRent = listings.length > 0 ? listings.reduce((sum, listing) => sum + listing.cost, 0) / listings.length : 0;
+    let totalListings = listings.length;
+    let averageRent = listings.length > 0 ? listings.reduce((sum, listing) => sum + listing.cost, 0) / listings.length : 0;
     const averageSqm = listings.length > 0 ? listings.reduce((sum, listing) => sum + listing.sqm, 0) / listings.length : 0;
-    const pricePerSqm = averageSqm > 0 ? averageRent / averageSqm : 0;
+    let pricePerSqm = averageSqm > 0 ? averageRent / averageSqm : 0;
 
     // Calculate real trends (compare with previous period)
     const now = new Date();
@@ -1257,7 +1257,7 @@ app.get('/api/analytics/data', { preHandler: authenticateUser }, async (request,
     const currentAvgRent = currentPeriodListings.length > 0 ? currentPeriodListings.reduce((sum, l) => sum + l.cost, 0) / currentPeriodListings.length : 0;
     const previousAvgRent = previousPeriodListings.length > 0 ? previousPeriodListings.reduce((sum, l) => sum + l.cost, 0) / previousPeriodListings.length : 0;
     
-    const rentChange = previousAvgRent > 0 ? ((currentAvgRent - previousAvgRent) / previousAvgRent) * 100 : 0;
+    let rentChange = previousAvgRent > 0 ? ((currentAvgRent - previousAvgRent) / previousAvgRent) * 100 : 0;
     const sqmChange = 0; // Could calculate SQM trends if needed
     
     // Group listings by Japanese cities/neighborhoods
