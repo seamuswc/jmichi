@@ -252,7 +252,7 @@ function MapPage() {
           <GoogleMap
             mapContainerStyle={containerStyle}
             center={domainConfig.center}
-            zoom={1}
+            zoom={14}
             options={mapOptions}
           >
             {(() => {
