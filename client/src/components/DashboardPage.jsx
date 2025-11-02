@@ -350,7 +350,7 @@ function DashboardPage() {
         <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-300 rounded-xl p-6 mb-6 md:mb-8">
           <h2 className="text-xl font-bold text-gray-800 mb-4">🎟️ Generate Promo Code</h2>
           <p className="text-sm text-gray-600 mb-4">
-            For customers who paid via ScanPay (Japanese Bank Transfer). Generate a promo code and send it via LINE.
+            For customers who paid via ScanPay (Japanese Bank Transfer). Generate a promo code and send it to the customer.
           </p>
           
           <div className="flex items-end gap-3">
@@ -394,7 +394,7 @@ function DashboardPage() {
                 </button>
               </div>
               <p className="text-xs text-gray-500 mt-2">
-                💡 Send this code to the customer via LINE. They can use it on the listing form.
+                💡 Send this code to the customer. They can use it on the listing form.
               </p>
             </div>
           )}

@@ -29,8 +29,7 @@ function CreatePage() {
   });
 
   const [merchantAddresses, setMerchantAddresses] = useState({
-    solana: '',
-    lineAccount: '@jmichi'
+    solana: ''
   });
 
   const [showQRModal, setShowQRModal] = useState(false);

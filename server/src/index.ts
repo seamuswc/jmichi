@@ -293,8 +293,7 @@ app.get('/api/config', async () => {
 // Get all merchant addresses
 app.get('/api/config/merchant-addresses', async () => {
   return {
-    solana: process.env.SOLANA_MERCHANT_ADDRESS || '',
-    lineAccount: process.env.LINE_ACCOUNT || '@jmichi'
+    solana: process.env.SOLANA_MERCHANT_ADDRESS || ''
   };
 });
 
