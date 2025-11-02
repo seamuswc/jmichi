@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Listing {
+  id              Int      @id @default(autoincrement())
+  building_name   String
+  latitude        Float
+  longitude       Float
+  floor           String
+  sqm             Int
+  cost            Int
+  description     String
+  youtube_link    String
+  reference       String
+  payment_network String   @default("solana")
+  rental_type     String   @default("living")
+  business_photo  String?
+  promo_code_used String?
+  thai_only       Boolean  @default(false)
+  has_pool        Boolean  @default(false)
+  has_parking     Boolean  @default(false)
+  is_top_floor    Boolean  @default(false)
+  six_months      Boolean  @default(false)
+  expires_at      DateTime
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+}
+
+model Promo {
+  id             Int      @id @default(autoincrement())
+  code           String   @unique
+  remaining_uses Int      @default(0)
+  email          String?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  password     String
+  payment_reference String @unique
+  expires_at   DateTime
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+}

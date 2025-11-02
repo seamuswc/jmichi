@@ -1,0 +1,466 @@
+import React, { useEffect, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
+import axios from 'axios';
+import * as solanaWeb3 from '@solana/web3.js';
+import { getDomainConfig } from '../utils/domainConfig';
+
+const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+
+function PaymentQRModal({ network, amount, reference, merchantAddress, onClose, onSuccess, listingData }) {
+  const [loading, setLoading] = useState(true);
+  const [paid, setPaid] = useState(false);
+  const [showQR, setShowQR] = useState(false);
+  const [qrUrl, setQrUrl] = useState('');
+  const [promoForm, setPromoForm] = useState({
+    listings: 1,
+    email: ''
+  });
+  const [generatedPromo, setGeneratedPromo] = useState(null);
+  const [showListingSelection, setShowListingSelection] = useState(false);
+  const [paidAmount, setPaidAmount] = useState(null); // Store the amount actually paid
+  const [generatingPromo, setGeneratingPromo] = useState(false); // Loading state for promo generation
+  
+  // Get domain-specific configuration
+  const domainConfig = getDomainConfig();
+
+  // Detect Phantom wallet
+  const detectPhantom = () => {
+    const win = window;
+    if (win.solana?.isPhantom) return win.solana;
+    if (win.phantom?.solana?.isPhantom) return win.phantom.solana;
+    return null;
+  };
+
+  useEffect(() => {
+    if (network !== 'solana' && network !== 'promo') return;
+
+    // For promo code purchases, show listing selection first
+    if (network === 'promo') {
+      setShowListingSelection(true);
+      setLoading(false);
+      return;
+    }
+
+    const initPayment = async () => {
+      try {
+        // Step 1: Create Solana Pay URL
+        const label = `${domainConfig.siteName} Listing`;
+        const message = 'Property Listing Payment';
+        
+        const params = new URLSearchParams({
+          amount: amount.toString(),
+          'spl-token': USDC_MINT,
+          reference: reference,
+          label: label,
+          message: message
+        });
+        const url = `solana:${merchantAddress}?${params.toString()}`;
+        // QR URL generated for payment
+        setQrUrl(url);
+
+        // Step 2: Try Phantom wallet first (desktop)
+        const provider = detectPhantom();
+        if (provider) {
+          try {
+            await provider.connect();
+            const payerPk = provider.publicKey;
+
+            // Get transaction from backend
+            const resp = await axios.post('/api/transaction', {
+              payer: payerPk.toBase58(),
+              recipient: merchantAddress,
+              amount: amount,
+              reference: reference
+            });
+
+            const { transaction } = resp.data;
+
+            // Sign and send
+            const txBuffer = Uint8Array.from(atob(transaction), c => c.charCodeAt(0));
+            const tx = solanaWeb3.Transaction.from(txBuffer);
+            await provider.signAndSendTransaction(tx);
+            
+            setLoading(false);
+          } catch (walletErr) {
+            // Phantom failed, show QR code
+            setShowQR(true);
+            setLoading(false);
+          }
+        } else {
+          // No Phantom detected, show QR code for mobile
+          setShowQR(true);
+          setLoading(false);
+        }
+
+        // Wait 5 seconds before starting payment validation
+        await new Promise(r => setTimeout(r, 5000));
+        
+        // Step 3: Poll for payment confirmation (5 second intervals to avoid rate limits)
+        for (let i = 0; i < 40; i++) {
+          await new Promise(r => setTimeout(r, 5000));
+          try {
+            const r = await axios.get(`/api/payment/check/solana/${reference}`);
+            if (r.data?.confirmed) {
+              setPaid(true);
+              
+              // Handle different payment types
+              if (network === 'promo') {
+                setShowQR(false); // Hide QR code for promo codes
+                await generatePromoCode();
+              } else {
+                setShowQR(false); // Hide QR code for Solana payments
+                await submitListing();
+              }
+              return;
+            }
+          } catch {}
+        }
+        
+        // Timeout after 2 minutes
+        setShowQR(false);
+        setLoading(false);
+        alert('Payment timeout. If payment completed, wait a few minutes. Otherwise, try again.');
+        onClose();
+      } catch (e) {
+        console.error('Payment error:', e);
+        alert(e?.message || String(e));
+        onClose();
+      }
+    };
+
+    initPayment();
+  }, [network, amount, reference, merchantAddress]);
+
+  const submitListing = async () => {
+    try {
+      // Submit listing for Solana payments
+      await axios.post('/api/listings', listingData);
+      
+      // Show success message for 3 seconds, then redirect
+      setTimeout(() => {
+        onSuccess();
+      }, 3000);
+    } catch (error) {
+      console.error('Failed to create listing:', error);
+      alert('Failed to create listing. Please try again.');
+      onClose();
+    }
+  };
+
+  const generatePromoCode = async () => {
+    try {
+      setGeneratingPromo(true);
+      // Use the form value instead of paidAmount to ensure we get the correct number
+      const response = await axios.post('/api/promo/generate-after-payment', {
+        reference: reference,
+        uses: promoForm.listings || paidAmount || 1,
+        email: promoForm.email || null
+      });
+      
+      setGeneratedPromo(response.data);
+      setGeneratingPromo(false);
+    } catch (error) {
+      console.error('Failed to generate promo code:', error);
+      setGeneratingPromo(false);
+      alert('Failed to generate promo code. Please try again.');
+    }
+  };
+
+  const handlePromoFormChange = (e) => {
+    const { name, value } = e.target;
+    
+    if (name === 'listings') {
+      // Only allow digits, no negative numbers, no zero
+      const numericValue = value.replace(/[^0-9]/g, ''); // Remove non-digits
+      const parsedValue = parseInt(numericValue);
+      
+      // Don't allow 0 or negative numbers
+      if (numericValue === '' || parsedValue <= 0) {
+        setPromoForm(prev => ({
+          ...prev,
+          [name]: ''
+        }));
+      } else {
+        setPromoForm(prev => ({
+          ...prev,
+          [name]: parsedValue
+        }));
+      }
+    } else {
+      setPromoForm(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
+  };
+
+  // Set the form to the paid amount when payment is successful
+  useEffect(() => {
+    if (paid && paidAmount) {
+      setPromoForm(prev => ({
+        ...prev,
+        listings: paidAmount
+      }));
+    }
+  }, [paid, paidAmount]);
+
+  const proceedToPayment = async () => {
+    try {
+      // Validate input
+      if (!promoForm.listings || promoForm.listings <= 0 || isNaN(promoForm.listings)) {
+        alert('Please enter a valid number of listings (minimum 1)');
+        return;
+      }
+      
+      // Calculate total amount based on selected listings
+      const totalAmount = promoForm.listings;
+      
+      // Store the paid amount to limit future selections
+      setPaidAmount(totalAmount);
+      
+      // Create Solana Pay URL for promo code purchase
+      const params = new URLSearchParams({
+        amount: totalAmount.toString(),
+        'spl-token': USDC_MINT,
+        reference: reference,
+        label: `${domainConfig.siteName} Promo Code`,
+        message: 'Promo Code Purchase'
+      });
+      const url = `solana:${merchantAddress}?${params.toString()}`;
+      // Promo QR URL generated
+      setQrUrl(url);
+      
+      setShowListingSelection(false);
+      setShowQR(true);
+      
+      // Wait 5 seconds before starting payment validation
+      await new Promise(r => setTimeout(r, 5000));
+      
+      // Start polling for payment confirmation
+      for (let i = 0; i < 40; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        try {
+          const r = await axios.get(`/api/payment/check/solana/${reference}`);
+          if (r.data?.confirmed) {
+            setPaid(true);
+            setShowQR(false);
+            await generatePromoCode();
+            return;
+          }
+        } catch {}
+      }
+      
+      // Timeout after 2 minutes
+      setShowQR(false);
+      setLoading(false);
+      alert('Payment timeout. If payment completed, wait a few minutes. Otherwise, try again.');
+      onClose();
+    } catch (e) {
+      console.error('Payment error:', e);
+      alert(e?.message || String(e));
+      onClose();
+    }
+  };
+
+  return (
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 md:p-8 relative"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl"
+        >
+          ×
+        </button>
+
+        {/* Only show header if promo code hasn't been generated yet */}
+        {!generatedPromo && (
+          <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl p-6 mb-6 text-center">
+            <h2 className="text-2xl font-bold mb-2">{network === 'promo' ? 'Buy Promo Code with Solana' : 'Pay with Solana'}</h2>
+            <p className="text-3xl font-bold mt-2">{network === 'promo' ? promoForm.listings : amount} USDC</p>
+          </div>
+        )}
+
+        {/* Listing selection for promo code purchase */}
+        {showListingSelection && (
+          <div className="text-center">
+            <div className="text-6xl mb-4">🎟️</div>
+            <p className="text-purple-600 font-bold text-xl mb-4">Select Your Promo Code</p>
+            <p className="text-sm text-gray-500 mb-6">Choose how many listings you want for your promo code:</p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Number of Listings
+                </label>
+                <input
+                  type="text"
+                  name="listings"
+                  value={promoForm.listings}
+                  onChange={handlePromoFormChange}
+                  max="100"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-lg"
+                  placeholder="Enter number of listings"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Email (Optional) 📧
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  value={promoForm.email}
+                  onChange={handlePromoFormChange}
+                  placeholder="your@email.com"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-lg"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  We'll email you the promo code details after purchase
+                </p>
+              </div>
+              
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <p className="text-sm text-purple-800">
+                  💡 <strong>Total:</strong> {promoForm.listings} listing{promoForm.listings > 1 ? 's' : ''} for {promoForm.listings} USDC
+                </p>
+              </div>
+              
+              <button
+                onClick={proceedToPayment}
+                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-semibold px-6 py-4 rounded-lg transition-all transform hover:scale-105 shadow-lg"
+              >
+                💳 Pay {promoForm.listings} USDC & Get Promo Code
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Loading state - only for regular Solana payments */}
+        {loading && !showQR && !paid && network !== 'promo' && (
+          <div className="text-center">
+            <div className="text-6xl mb-4">🔗</div>
+            <p className="text-blue-600 font-bold text-xl">Connecting to wallet...</p>
+            <p className="text-sm text-gray-500 mt-2">Please approve the connection</p>
+          </div>
+        )}
+
+        {/* Waiting for payment (Phantom used, no QR) - only for regular Solana payments */}
+        {!loading && !showQR && !paid && network !== 'promo' && (
+          <div className="text-center">
+            <div className="text-6xl mb-4">⏳</div>
+            <p className="text-blue-600 font-bold text-xl">Waiting for payment...</p>
+            <p className="text-sm text-gray-500 mt-2">
+              Please complete the transaction in your wallet
+            </p>
+          </div>
+        )}
+
+        {/* QR Code */}
+        {showQR && qrUrl && !paid && (
+          <div className="text-center">
+            <div className="bg-white p-4 rounded-lg inline-block mb-4 border-4 border-purple-100">
+              <QRCodeSVG value={qrUrl} size={256} level="H" />
+            </div>
+            <p className="text-gray-700 mb-2 font-medium">
+              Scan with your Solana wallet
+            </p>
+            <p className="text-sm text-gray-500 mb-3">
+              Waiting for payment confirmation...
+            </p>
+            <div className="mt-4 bg-purple-50 border border-purple-200 rounded-lg p-3">
+              <p className="text-xs text-purple-800">
+                💡 <strong>Mobile:</strong> Open your wallet and scan this QR code
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="mt-4 text-gray-500 text-sm hover:text-gray-700"
+            >
+              Close
+            </button>
+          </div>
+        )}
+
+
+        {/* Solana payment success message */}
+        {paid && network === 'solana' && (
+          <div className="text-center">
+            <div className="text-6xl mb-4">✅</div>
+            <p className="text-green-600 font-bold text-xl mb-4">Payment Successful!</p>
+            <p className="text-gray-600 mb-4">Your listing has been created successfully.</p>
+            <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4 mb-4">
+              <p className="text-sm text-green-800">
+                🎉 <strong>Success!</strong> Your property listing is now live on the map.
+              </p>
+            </div>
+            <p className="text-sm text-gray-500">Redirecting to homepage...</p>
+          </div>
+        )}
+
+        {/* Loading state for promo code generation */}
+        {generatingPromo && (
+          <div className="text-center">
+            <div className="text-6xl mb-4">⏳</div>
+            <p className="text-blue-600 font-bold text-xl mb-4">Generating Promo Code...</p>
+            <p className="text-gray-600 mb-4">Please wait while we create your promo code.</p>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          </div>
+        )}
+
+        {/* Generated promo code */}
+        {generatedPromo && (
+          <div className="text-center">
+            <div className="text-6xl mb-4">🎟️</div>
+            <p className="text-green-600 font-bold text-xl mb-4">Promo Code Generated!</p>
+            
+            <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 mb-4">
+              <p className="text-sm text-gray-600 mb-2">Your Promo Code:</p>
+              <p className="text-2xl font-mono font-bold text-gray-800 break-all">{generatedPromo.code}</p>
+              <p className="text-xs text-gray-500 mt-2">
+                Valid for 1 listing per use
+              </p>
+            </div>
+            
+            <div className="space-y-3">
+              <button
+                onClick={() => navigator.clipboard.writeText(generatedPromo.code)}
+                className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg transition-colors"
+              >
+                📋 Copy Code
+              </button>
+              
+              
+              <button
+                onClick={() => {
+                  // Pass the promo code to the success handler
+                  if (onSuccess) {
+                    onSuccess(generatedPromo.code);
+                  }
+                }}
+                className="w-full bg-green-500 hover:bg-green-600 text-white font-semibold px-4 py-2 rounded-lg transition-colors"
+              >
+                ✅ Use This Promo Code
+              </button>
+              
+              <button
+                onClick={onClose}
+                className="w-full bg-gray-500 hover:bg-gray-600 text-white font-semibold px-4 py-2 rounded-lg transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default PaymentQRModal;
